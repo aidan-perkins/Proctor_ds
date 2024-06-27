@@ -1,6 +1,7 @@
 rm(list = ls())
 
 #4:05pm I AM MAKING here i am making changes 
+#hello here are new changes
 
 
 install.packages("tidyverse") 
@@ -18,7 +19,6 @@ install.packages("raster")
 install.packages("sf")
 install.packages("terra")
 install.packages("stringr")
-
 install.packages("terra")
 install.packages("rms")
 install.packages("ggmap")
@@ -49,7 +49,6 @@ library(raster)
 library(sf)
 library(terra)
 library(stringr)
-
 library(bigmemory)
 library(exactextractr)
 library(dplyr)
@@ -76,7 +75,6 @@ library(stargazer)
 ###########################################
 
 ### data paths
-
 maize <- "/Users/aidanperkins/Downloads/Proctor/Proctor_1/Data/Maize_1999_2019_NASS.csv"
 soy <- "/Users/aidanperkins/Downloads/Proctor/Proctor_1/Data/Soy_1999_2020_NASS.csv"
 weather <- ("/Users/aidanperkins/Downloads/Proctor/Proctor_1/Data/weather_2020-09-15.csv")
