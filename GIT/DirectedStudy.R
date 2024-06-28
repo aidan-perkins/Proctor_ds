@@ -1,6 +1,8 @@
 rm(list = ls())
 
-#last updated, 6/28/2024, 12:51pm
+#last updated, 6/28/2024, 4:22pm
+# need to continue making maps and figures
+#response functions
 
 install.packages("tidyverse") 
 install.packages("data.table")
