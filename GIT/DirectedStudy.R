@@ -1,8 +1,6 @@
 rm(list = ls())
 
-#last updated, 6/28/2024, 4:22pm
-# need to continue making maps and figures
-#response functions
+#last updated, 8/1/2024, 
 
 install.packages("tidyverse") 
 install.packages("data.table")
@@ -99,7 +97,8 @@ WM_Rast <- rast(Weighted_AWC_Maize_path)
 maize_gs <- fread(maize_gs_path)
 
 ###########################################
-########Resolution no need to run##########
+########Coarsened the Resolution of Maize to Match AWC
+#####AWC and Maize, no need to run, think I used the aggregate tool shown below##########
 
 # Load the terra package
 
@@ -146,7 +145,7 @@ print(paste("Resolution of AWC (in degrees): ", AWC_resolution[1], "x", AWC_reso
 print(paste("Resolution of MaizeCover_resampled (in meters): ", MaizeCover_resampled_resolution[1], "x", MaizeCover_resampled_resolution[2]))
 
 ###########################################
-#########Reprojection, no run##############
+#########Reproject AWC to match Maize CRS, no run##############
 
 # Reproject the AWC dataset to NAD83 Conus Albers
 AWC_reprojected <- project(AWC, Maize_Cover)
@@ -195,12 +194,12 @@ if (!require("stringr")) {
 
 
 ###########################################
-### --- Clean Data --- ###
+### --- Clean Data, did not add soy data --- ###
 ###########################################
 
 # Convert data frames to data tables
 maize <- as.data.table(maize)
-soy <- as.data.table(soy)
+#soy <- as.data.table(soy)
 
 #############################################
 
@@ -235,18 +234,6 @@ maize <- maize[!is.na(`County ANSI`),]
 
 # Remove unnecessary columns
 maize[, `:=`(
-  `Week Ending` = NULL,
-  Period = NULL,
-  `Geo Level` = NULL,
-  `Zip Code` = NULL,
-  Region = NULL,
-  watershed_code = NULL,
-  Watershed = NULL,
-  `Domain Category` = NULL,
-  `CV (%)` = NULL
-)]
-
-soy[, `:=`(
   `Week Ending` = NULL,
   Period = NULL,
   `Geo Level` = NULL,
@@ -462,39 +449,6 @@ gs_vals_singleVars = weather_merged[,.(lat = namean(INTPTLAT),
 
 gs_vals =  gs_vals_singleVars
 
-###########################################
-### --- MAIZE merge with yield data--- ###
-###########################################
-
-maize[, GEOID := as.character(GEOID)]
-gs_vals[, GEOID := as.character(GEOID)]
-
-maize_gs = merge(maize, gs_vals, by = c("GEOID","Year"), all.y = T)
-num = maize_gs[!is.na(Value),.N,GEOID]
-maize_gs = merge(maize_gs, num, by = "GEOID", all.x = T)
-
-#Drop counties with fewer than 10 yield observations
-maize_gs = maize_gs[N >= 10,]
-
-#Drop counties west of the 100th meridian, following S&R. Also drop florida (already gone). 
-maize_gs = maize_gs[lon > -100]
-
-#Make useful variables:
-maize_gs$Year = maize_gs$Year
-maize_gs$Year_2 = maize_gs$Year^2
-maize_gs$ln_yield = log(maize_gs$Value)
-
-### Clean up: 
-maize_gs$Program = NULL
-maize_gs$`Ag District` = NULL
-maize_gs$`Ag District Code` = NULL
-maize_gs$Domain = NULL
-maize_gs$doy = NULL
-maize_gs$N = NULL
-
-colnames(maize_gs)[colnames(maize_gs) == "Value"] = "yield"
-
-head(maize_gs)
 
 ###########################################
 ### --- SOY merge with yield data, no soy data--- ###
@@ -531,38 +485,6 @@ head(maize_gs)
 soy_gs = soy_gs[!is.na(edd_10) & !is.na(edd_28) & !is.na(ln_yield),]
 soy_gs = soy_gs[!is.nan(edd_10) & !is.nan(edd_28) & !is.nan(ln_yield) & ln_yield > 0,]
 
-### --- AWC WM merge with yield data, do not run
-###---maize_gs with AWC_WM is already loaded--- ###
-###########################################
-head(AWC_WM)
-head(maize_gs)
-
-# Print unique county names from both datasets
-unique(AWC_WM$County)
-unique(maize_gs$County.)
-
-# Convert data.frames to data.tables
-setDT(AWC_WM)
-setDT(maize_gs)
-
-# Standardize county names: trim whitespace and convert to lower case
-AWC_WM[, County := trimws(tolower(County))]
-maize_gs[, County.x := trimws(tolower(County))]
-
-# Create a unique key to merge on
-maize_gs <- unique(maize_gs[, .(County, GEOID)])
-
-# Merge the datasets to add GEOID to AWC_WM
-AWC_WM <- merge(AWC_WM, maize_gs, by.x = "County", by.y = "County", all.x = TRUE)
-
-# View the first few rows of the updated AWC_WM dataset
-head(AWC_WM)
-
-maize_gs <- merge(maize_gs, AWC_WM[, .(GEOID, weighted_mean_AWC)], by = "GEOID", all.x = TRUE)
-
-maize_gs[, `:=`(County.y = NULL, County = NULL, weighted_mean_AWC.x = NULL, weighted_mean_AWC.y = NULL)]
-
-fwrite(maize_gs, "D:/R_temp/maize_gs.csv")
 
 ###########################################
 ### --- estimate regressions --- ###
@@ -595,23 +517,23 @@ maize_gs = maize_gs[!is.na(edd_10) & !is.na(edd_28) & !is.na(ln_yield),]
 maize_gs = maize_gs[!is.nan(edd_10) & !is.nan(edd_28) & !is.nan(ln_yield) & ln_yield > 0,]
 
 #original models 
-mod0 = felm(ln_yield ~ edd_10 + edd_28 | as.factor(GEOID) + as.factor(State):as.numeric(Year), data = maize_gs, keepCX = T, keepX = T)
-mod1 = felm(ln_yield ~ edd_10 + edd_28 + ppt + ppt_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod2 = felm(ln_yield ~ edd_10 + edd_28 + swdown + swdown_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod3 = felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod4 = felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2 + swdown + swdown_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod5 = felm(ln_yield ~ edd_10 + edd_28 | as.factor(GEOID), data = maize_gs, keepCX = T, keepX = T)
-mod6 = felm(ln_yield ~ edd_10 + edd_28 | as.factor(State): as.numeric(Year), data = maize_gs)
+#mod0 = felm(ln_yield ~ edd_10 + edd_28 | as.factor(GEOID) + as.factor(State):as.numeric(Year), data = maize_gs, keepCX = T, keepX = T)
+#mod1 = felm(ln_yield ~ edd_10 + edd_28 + ppt + ppt_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod2 = felm(ln_yield ~ edd_10 + edd_28 + swdown + swdown_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod3 = felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod4 = felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2 + swdown + swdown_2  | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod5 = felm(ln_yield ~ edd_10 + edd_28 | as.factor(GEOID), data = maize_gs, keepCX = T, keepX = T)
+#mod6 = felm(ln_yield ~ edd_10 + edd_28 | as.factor(State): as.numeric(Year), data = maize_gs)
 
 # Updated models with interactions
 
-mod0 <- felm(ln_yield ~ edd_10 + edd_28 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | as.factor(GEOID) + as.factor(State):as.numeric(Year), data = maize_gs, keepCX = TRUE, keepX = TRUE)
-mod1 <- felm(ln_yield ~ edd_10 + edd_28 + ppt + ppt_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod2 <- felm(ln_yield ~ edd_10 + edd_28 + swdown + swdown_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod3 <- felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod4 <- felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2 + swdown + swdown_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
-mod5 <- felm(ln_yield ~ edd_10 + edd_28 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | as.factor(GEOID), data = maize_gs, keepCX = TRUE, keepX = TRUE)
-mod6 <- felm(ln_yield ~ edd_10 + edd_28 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | as.factor(State):as.numeric(Year), data = maize_gs)
+#mod0 <- felm(ln_yield ~ edd_10 + edd_28 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | as.factor(GEOID) + as.factor(State):as.numeric(Year), data = maize_gs, keepCX = TRUE, keepX = TRUE)
+#mod1 <- felm(ln_yield ~ edd_10 + edd_28 + ppt + ppt_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod2 <- felm(ln_yield ~ edd_10 + edd_28 + swdown + swdown_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod3 <- felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod4 <- felm(ln_yield ~ edd_10 + edd_28 + smrz + smrz_2 + swdown + swdown_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | GEOID + as.factor(State):as.numeric(Year), data = maize_gs)
+#mod5 <- felm(ln_yield ~ edd_10 + edd_28 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | as.factor(GEOID), data = maize_gs, keepCX = TRUE, keepX = TRUE)
+#mod6 <- felm(ln_yield ~ edd_10 + edd_28 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC | as.factor(State):as.numeric(Year), data = maize_gs)
 
 #now with updated mod0 and 1 to include precipitation
 mod0 <- felm(ln_yield ~ edd_10 + edd_28 + ppt + ppt_2 + edd_10:weighted_mean_AWC + edd_28:weighted_mean_AWC + ppt:weighted_mean_AWC + ppt_2:weighted_mean_AWC | as.factor(GEOID) + as.factor(State):as.numeric(Year), data = maize_gs, keepCX = TRUE, keepX = TRUE)
@@ -640,9 +562,416 @@ regression_file_path <- "D:/R_temp/Plots/regression_results_precip.txt"
 cat(text_output, sep = "\n", file = regression_file_path)
 
 
+#######RESPONSE FUNCTIONS########
+#################################
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+##### PPT vs yield response curve###
+
+# Model results (insert the coefficients from your model here)
+coefficients <- list(
+  ppt = 0.049,
+  ppt_2 = -0.001
+)
+
+# Generate a sequence of values for ppt
+ppt_seq <- seq(min(maize_gs$ppt, na.rm = TRUE),
+               max(maize_gs$ppt, na.rm = TRUE),
+               length.out = 100)
+
+# Define a function to predict yield based on ppt and ppt_2
+predict_yield <- function(ppt, coefficients) {
+  yield <- coefficients$ppt * ppt +
+    coefficients$ppt_2 * (ppt^2)
+  return(yield)
+}
+
+# Create a dataframe for plotting
+plot_data <- data.frame(
+  ppt = ppt_seq,
+  predicted_yield = sapply(ppt_seq, predict_yield, coefficients = coefficients)
+)
+
+# Plot the response curve for ppt
+ggplot(plot_data, aes(x = ppt, y = predicted_yield)) +
+  geom_line(color = "blue") +
+  labs(title = "Response Curve of Yield to ppt",
+       x = "Precipitation (ppt)",
+       y = "Predicted Yield (ln_yield)") +
+  theme_minimal()
+
+
+##################################################
+#### GGD and KDD temperature curve###############
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Model results (insert the coefficients from your model here)
+coefficients_gdd <- list(
+  gdd = 0.015
+)
+
+coefficients_kdd <- list(
+  kdd = -0.363
+)
+
+# Define a function to predict yield based on GDD (edd_10)
+predict_yield_gdd <- function(gdd, coefficients) {
+  yield <- coefficients$gdd * gdd
+  return(yield)
+}
+
+# Define a function to predict yield based on KDD (edd_28)
+predict_yield_kdd <- function(kdd, coefficients) {
+  yield <- coefficients$kdd * kdd
+  return(yield)
+}
+
+# Create dataframes for plotting
+plot_data_gdd <- data.frame(
+  gdd = gdd_seq,
+  predicted_yield = sapply(gdd_seq, predict_yield_gdd, coefficients = coefficients_gdd)
+)
+
+plot_data_kdd <- data.frame(
+  kdd = kdd_seq,
+  predicted_yield = sapply(kdd_seq, predict_yield_kdd, coefficients = coefficients_kdd)
+)
+
+# Plot the response curve for GDD
+gdd_plot <- ggplot(plot_data_gdd, aes(x = gdd, y = predicted_yield)) +
+  geom_line(color = "blue") +
+  labs(title = "Response Curve of Yield to GDD (edd_10)",
+       x = "Growing Degree Days (GDD)",
+       y = "Predicted Yield (ln_yield)") +
+  theme_minimal()
+
+# Plot the response curve for KDD
+kdd_plot <- ggplot(plot_data_kdd, aes(x = kdd, y = predicted_yield)) +
+  geom_line(color = "blue") +
+  labs(title = "Response Curve of Yield to KDD (edd_28)",
+       x = "Killing Degree Days (KDD)",
+       y = "Predicted Yield (ln_yield)") +
+  theme_minimal()
+
+# Display the plots
+print(gdd_plot)
+print(kdd_plot)
+
+
+#####################################################
+#########plotting KDD and GDD together##############
+
+# Load necessary libraries
+library(ggplot2)
+
+# Define temperature range (e.g., from 0°C to 40°C)
+temperature_seq <- seq(0, 40, by = 0.01)
+
+# Calculate GDD and KDD for each temperature
+calculate_gdd_kdd <- function(temp) {
+  gdd <- ifelse(temp >= 10 & temp < 28, temp - 10, 0)
+  kdd <- ifelse(temp >= 28, temp - 28, 0)
+  return(c(gdd, kdd))
+}
+
+gdd_kdd_values <- t(sapply(temperature_seq, calculate_gdd_kdd))
+colnames(gdd_kdd_values) <- c("GDD", "KDD")
+
+# Apply the model coefficients
+coefficients_gdd <- 0.015  # From Model 0
+coefficients_kdd <- -0.363 # From Model 0
+
+predicted_yield <- gdd_kdd_values[, "GDD"] * coefficients_gdd +
+  gdd_kdd_values[, "KDD"] * coefficients_kdd
+
+# Create dataframe for plotting
+plot_data_kdd_gdd <- data.frame(
+  temperature = temperature_seq,
+  predicted_yield = predicted_yield
+)
+
+# Plot the response function
+ggplot(plot_data, aes(x = temperature, y = predicted_yield)) +
+  geom_line(color = "blue") +
+  labs(title = "Response Curve of Yield to Temperature",
+       x = "Temperature (°C)",
+       y = "Predicted Yield (ln_yield)") +
+  theme_minimal()
+
+##################################
+### response curves takes growing season in account#####
+### changes from log scale to percentage###############
+
+# Load necessary libraries
+library(ggplot2)
+
+# Define temperature range (e.g., from 0°C to 40°C)
+temperature_seq <- seq(0, 40, by = 0.01)
+
+# Calculate GDD and KDD for each temperature
+calculate_gdd_kdd <- function(temp) {
+  gdd <- ifelse(temp >= 10 & temp < 28, temp - 10, 
+                ifelse(temp >= 28, 18, 0))
+  kdd <- ifelse(temp >= 28, temp - 28, 0)
+  return(c(gdd, kdd))
+}
+
+gdd_kdd_values <- t(sapply(temperature_seq, calculate_gdd_kdd))
+colnames(gdd_kdd_values) <- c("GDD", "KDD")
+
+# Define the growing season length (e.g., 120 days)
+growing_season_length <- 120
+
+# Model results (insert the coefficients from your model here)
+coefficients_gdd <- 0.015  # From Model 0
+coefficients_kdd <- -0.363 # From Model 0
+
+# Apply the model coefficients and adjust for daily effects
+predicted_yield_log <- (gdd_kdd_values[, "GDD"] * coefficients_gdd +
+                          gdd_kdd_values[, "KDD"] * coefficients_kdd) / growing_season_length
+
+# Exponentiate the log values and convert to percentage change
+predicted_yield_percent <- (exp(predicted_yield_log) - 1) * 100
+
+# Create dataframe for plotting
+plot_data <- data.frame(
+  temperature = temperature_seq,
+  predicted_yield = predicted_yield_percent
+)
+
+# Plot the response function
+ggplot(plot_data, aes(x = temperature, y = predicted_yield)) +
+  geom_line(color = "blue") +
+  labs(title = "Response Curve of Yield to Temperature",
+       x = "Temperature (°C)",
+       y = "Predicted Yield Change (%)") +
+  theme_minimal()
+
+###################################################################
+############response curve with AWC ###############################
+
+# Load necessary libraries
+library(ggplot2)
+maize_gs <- fread(maize_gs_path)
+# Define temperature range (e.g., from 0°C to 40°C)
+temperature_seq <- seq(0, 40, by = 0.01)
+
+# Calculate GDD and KDD for each temperature
+calculate_gdd_kdd <- function(temp) {
+  gdd <- ifelse(temp >= 10 & temp < 28, temp - 10, 
+                ifelse(temp >= 28, 18, 0))
+  kdd <- ifelse(temp >= 28, temp - 28, 0)
+  return(c(gdd, kdd))
+}
+
+gdd_kdd_values <- t(sapply(temperature_seq, calculate_gdd_kdd))
+colnames(gdd_kdd_values) <- c("GDD", "KDD")
+
+# Define the growing season length (e.g., 120 days)
+growing_season_length <- 120
+
+# Model results from Model 0
+coefficients_gdd <- 0.015              # edd_10
+coefficients_kdd <- -0.363             # edd_28
+coefficients_gdd_awc <- 0.0002         # edd_10:weighted_mean_AWC
+coefficients_kdd_awc <- -0.001         # edd_28:weighted_mean_AWC
+
+# Define AWC levels based on real range (10th percentile, median, 90th percentile)
+awc_levels <- c(low = 80, medium = 140, high = 200)
+
+# Calculate predicted yield changes for each AWC level
+predicted_yields <- lapply(awc_levels, function(awc) {
+  predicted_yield_log <- (gdd_kdd_values[, "GDD"] * coefficients_gdd +
+                            gdd_kdd_values[, "KDD"] * coefficients_kdd +
+                            gdd_kdd_values[, "GDD"] * awc * coefficients_gdd_awc +
+                            gdd_kdd_values[, "KDD"] * awc * coefficients_kdd_awc) / growing_season_length
+  predicted_yield_percent <- (exp(predicted_yield_log) - 1) * 100
+  return(predicted_yield_percent)
+})
+
+# Create dataframe for plotting
+plot_data <- data.frame(
+  temperature = rep(temperature_seq, times = length(awc_levels)),
+  predicted_yield = unlist(predicted_yields),
+  awc_level = rep(names(awc_levels), each = length(temperature_seq))
+)
+
+# Plot the response functions
+ggplot(plot_data, aes(x = temperature, y = predicted_yield, color = awc_level)) +
+  geom_line() +
+  labs(title = "Response Curve of Yield to Temperature with Different AWC Levels",
+       x = "Temperature (°C)",
+       y = "Predicted Yield Change (%)",
+       color = "AWC Level") +
+  theme_minimal()
+
+###################################
+#####NOW PERCENTILES###############
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(data.table)
+
+# Load the dataset
+maize_gs <- fread(maize_gs_path)
+
+# Calculate the 25th and 75th percentiles, removing any NA values
+percentiles <- quantile(maize_gs$weighted_mean_AWC, probs = c(0.05, 0.95), na.rm = TRUE)
+
+# Define a function to categorize AWC based on the percentiles
+categorize_awc <- function(awc) {
+  if (is.na(awc)) {
+    return(NA)
+  } else if (awc <= percentiles[1]) {
+    return("bottom 5%")
+  } else if (awc <= percentiles[2]) {
+    return("middle 90%")
+  } else {
+    return("upper 5%")
+  }
+}
+
+# Apply the function to categorize the dataset
+maize_gs <- maize_gs %>%
+  mutate(awc_category = sapply(weighted_mean_AWC, categorize_awc))
+
+# Check the results
+print(head(maize_gs))
+
+# Define temperature range (e.g., from 0°C to 40°C)
+temperature_seq <- seq(0, 40, by = 0.01)
+
+# Calculate GDD and KDD for each temperature
+calculate_gdd_kdd <- function(temp) {
+  gdd <- ifelse(temp >= 10 & temp < 28, temp - 10, 
+                ifelse(temp >= 28, 18, 0))
+  kdd <- ifelse(temp >= 28, temp - 28, 0)
+  return(c(gdd, kdd))
+}
+
+gdd_kdd_values <- t(sapply(temperature_seq, calculate_gdd_kdd))
+colnames(gdd_kdd_values) <- c("GDD", "KDD")
+
+# Define the growing season length (e.g., 120 days)
+growing_season_length <- 120
+
+# Model results from Model 0
+coefficients_gdd <- 0.015              # edd_10
+coefficients_kdd <- -0.363             # edd_28
+coefficients_gdd_awc <- 0.0002         # edd_10:weighted_mean_AWC
+coefficients_kdd_awc <- -0.001         # edd_28:weighted_mean_AWC
+
+# Define AWC levels based on calculated percentiles
+awc_levels <- c("bottom 5%" = percentiles[1], 
+                "middle 90%" = (percentiles[1] + percentiles[2]) / 2, 
+                "upper 5%" = percentiles[2])
+
+# Print AWC levels to ensure they are correct
+print(awc_levels)
+
+# Calculate predicted yield changes for each AWC level
+predicted_yields <- lapply(awc_levels, function(awc) {
+  predicted_yield_log <- (gdd_kdd_values[, "GDD"] * coefficients_gdd +
+                            gdd_kdd_values[, "KDD"] * coefficients_kdd +
+                            gdd_kdd_values[, "GDD"] * awc * coefficients_gdd_awc +
+                            gdd_kdd_values[, "KDD"] * awc * coefficients_kdd_awc) / growing_season_length
+  predicted_yield_percent <- (exp(predicted_yield_log) - 1) * 100
+  return(predicted_yield_percent)
+})
+
+# Print a sample of the predicted yields to verify calculations
+print(head(predicted_yields))
+
+# Create dataframe for plotting
+plot_data <- data.frame(
+  temperature = rep(temperature_seq, times = length(awc_levels)),
+  predicted_yield = unlist(predicted_yields),
+  awc_level = rep(names(awc_levels), each = length(temperature_seq))
+)
+
+# Plot the response functions
+ggplot(plot_data, aes(x = temperature, y = predicted_yield, color = awc_level)) +
+  geom_line() +
+  labs(title = "Response Curve of Yield to Temperature with Different AWC Levels",
+       x = "Temperature (°C)",
+       y = "Predicted Yield Change (%)",
+       color = "AWC Level") +
+  theme_minimal()
+
+
+
+library(ggplot2)
+library(data.table)
+
+# Assuming 'maize_gs_path' is the path to your dataset
+maize_gs <- fread(maize_gs_path)
+
+# Define temperature range (e.g., from 0°C to 40°C)
+temperature_seq <- seq(0, 40, by = 0.01)
+
+# Calculate GDD and KDD for each temperature
+calculate_gdd_kdd <- function(temp) {
+  gdd <- ifelse(temp >= 10 & temp < 28, temp - 10, 
+                ifelse(temp >= 28, 18, 0))
+  kdd <- ifelse(temp >= 28, temp - 28, 0)
+  return(c(gdd, kdd))
+}
+
+gdd_kdd_values <- t(sapply(temperature_seq, calculate_gdd_kdd))
+colnames(gdd_kdd_values) <- c("GDD", "KDD")
+
+# Define the growing season length (e.g., 120 days)
+growing_season_length <- 120
+
+# Model results from Model 0
+coefficients_gdd <- 0.015              # edd_10
+coefficients_kdd <- -0.363             # edd_28
+coefficients_gdd_awc <- 0.0002         # edd_10:weighted_mean_AWC
+coefficients_kdd_awc <- -0.001         # edd_28:weighted_mean_AWC
+
+# Calculate percentiles for AWC values
+awc_quantiles <- quantile(maize_gs$weighted_mean_AWC, probs = c(0.05, 0.50, 0.95), na.rm = TRUE)
+
+# Define AWC levels based on the quantiles
+awc_levels <- c(low = awc_quantiles[1], medium = awc_quantiles[2], high = awc_quantiles[3])
+
+# Calculate predicted yield changes for each AWC level
+predicted_yields <- lapply(awc_levels, function(awc) {
+  predicted_yield_log <- (gdd_kdd_values[, "GDD"] * coefficients_gdd +
+                            gdd_kdd_values[, "KDD"] * coefficients_kdd +
+                            gdd_kdd_values[, "GDD"] * awc * coefficients_gdd_awc +
+                            gdd_kdd_values[, "KDD"] * awc * coefficients_kdd_awc) / growing_season_length
+  predicted_yield_percent <- (exp(predicted_yield_log) - 1) * 100
+  return(predicted_yield_percent)
+})
+
+# Create dataframe for plotting
+plot_data <- data.frame(
+  temperature = rep(temperature_seq, times = length(awc_levels)),
+  predicted_yield = unlist(predicted_yields),
+  awc_level = rep(names(awc_levels), each = length(temperature_seq))
+)
+
+# Plot the response functions
+ggplot(plot_data, aes(x = temperature, y = predicted_yield, color = awc_level)) +
+  geom_line() +
+  labs(title = "Response Curve of Yield to Temperature with Different AWC Levels",
+       x = "Temperature (°C)",
+       y = "Predicted Yield Change (%)",
+       color = "AWC Level") +
+  theme_minimal()
+
+
+
+
 
 ###################################################
-######### MAPS.         #########################
+######### MAPS.none of these look all that great rn       
 ##################################################
 # Create the plot without border and axis numbers
 plot(AWC_aggregated, main="Available Water Capacity, 150m Resolution",
